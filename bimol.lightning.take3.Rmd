@@ -1,0 +1,282 @@
+---
+title: "More than a boring phylogeography project"
+author: "Devon DeRaad"
+date: "5/10/2019"
+output: html_document
+---
+
+```{r, echo=FALSE,out.width="49%", out.height="20%",fig.cap="T. chloris armstrongi/abyssinicus",fig.show='hold',fig.align='center'}
+knitr::include_graphics(c("/Users/devder/Desktop/chloris.armstrongi.png","/Users/devder/Desktop/chloris.abyssinicus.png"))
+```
+
+```{r libset, warning=FALSE, message=FALSE}
+#load packages
+library(ggplot2)
+library(vcfR)
+library(adegenet)
+library(adegraphics)
+library(pegas)
+library(StAMPP)
+library(lattice)
+library(gplots)
+library(ape)
+```
+
+
+Read in csv file with locality and population info
+```{r}
+todi.sampling<- read.csv("~/Desktop/Todiramphus/todi.sampling.csv")
+todi.sampling$new.names<-paste(todi.sampling$LHD_pop, todi.sampling$id, sep = "")
+```
+step 1: generate vcf file from radseq data using the stacks pipeline (Catchen et al. 2011) to infer loci 'reference aligned' (with genomic positioning information) using pseudochromosome assembled reference genome.
+
+step 2: read in vcf to rstudio and convert to genlight
+```{r, output = FALSE}
+reffed.todi.vcf <- read.vcfR("~/Desktop/chroms.populations.snps.vcf") #read in all data
+#head(reffed.todi.vcf) #check the vcf object
+#reffed.todi.vcf@fix[1:10,1:5] #check 
+### convert to genlight
+reffed.todi.genlight <- vcfR2genlight(reffed.todi.vcf, n.cores=1)
+#drop individual w/ 70% missing data
+reffed.todi.genlight<- reffed.todi.genlight[i=c(1:26,28:59), drop=TRUE]
+todi.sampling<- todi.sampling[c(1:26,28:59),]
+#SET NAMES HERE
+# add popnames: here "population" (group) names are chars 5,6,7 of ind name 
+#pop(reffed.todi.genlight)<-substr(indNames(reffed.todi.genlight),1,1) 
+pop(reffed.todi.genlight)<-todi.sampling$LHD_pop
+```
+
+Check out the genlight
+```{r}
+#check the genlight
+reffed.todi.genlight # check the basic info on the genlight object
+indNames(reffed.todi.genlight) # check individual names
+```
+
+```{r, output = FALSE}
+#delimit populations (species here)
+#create species ~ ID chimera
+todi.sampling$new.names<-paste(todi.sampling$LHD_pop, substr(todi.sampling$id,9,17), sep = "")
+#change individual names
+reffed.todi.genlight$ind.names<- todi.sampling$new.names
+#as.matrix(reffed.todi.genlight)[1:5,1:20] # see tiny bit of the data
+pop(reffed.todi.genlight) # population assignment
+levels(reffed.todi.genlight$chromosome)
+```
+
+
+Make a subset genlight with only nuclear data
+```{r}
+devnuclear.todi.genlight<-reffed.todi.genlight[,reffed.todi.genlight$chromosome != "PseudoZ_dna"]
+nuclear.todi.genlight<-devnuclear.todi.genlight[,devnuclear.todi.genlight$chromosome != "PseudoZ_random_dna"]
+#see how many loci we retained
+reffed.todi.genlight$n.loc
+nuclear.todi.genlight$n.loc
+nuclear.todi.pca <- glPca(nuclear.todi.genlight, nf=10) # retain first 10 axes (for later use in find.clusters); slow function
+#pull pca scores out of df
+nuclear.pca.scores<-as.data.frame(nuclear.todi.pca$scores)
+#ggplot color by species
+ggplot(nuclear.pca.scores, aes(x=PC1, y=PC2, color=pop(nuclear.todi.genlight))) +
+  geom_point(cex = 2)
+```
+
+
+Subset a genlight with only snps on the Z chromosome, to see if we recover the same relationships as the nuclear dataset.
+```{r}
+Z.todi.genlight<-reffed.todi.genlight[,reffed.todi.genlight$chromosome == "PseudoZ_dna"]
+#check # loci retained
+Z.todi.genlight$n.loc
+#make PCA from only Z snps
+z.todi.pca <- glPca(Z.todi.genlight, nf=10) # retain first 10 axes (for later use in find.clusters); slow function
+#pull pca scores out of df
+z.pca.scores<-as.data.frame(z.todi.pca$scores)
+#ggplot color by species
+ggplot(z.pca.scores, aes(x=PC1, y=PC2, color=pop(Z.todi.genlight))) +
+  geom_point(cex = 2)
+```
+
+
+subset only Chromosome 1
+```{r}
+one.todi.genlight<-reffed.todi.genlight[,reffed.todi.genlight$chromosome == "Pseudo1_dna"]
+#check # of loci retained
+one.todi.genlight$n.loc
+#make pca
+one.todi.pca <- glPca(one.todi.genlight, nf=10) # retain first 10 axes (for later use in find.clusters); slow function
+#pull pca scores out of df
+one.pca.scores<-as.data.frame(one.todi.pca$scores)
+#ggplot color by species
+ggplot(one.pca.scores, aes(x=PC1, y=PC2, color=pop(one.todi.genlight))) +
+  geom_point(cex = 2)
+```
+
+subset only chr 2
+```{r}
+two.todi.genlight<-reffed.todi.genlight[,reffed.todi.genlight$chromosome == "Pseudo2_dna"]
+#check # of loci retained
+two.todi.genlight$n.loc
+#make pca
+two.todi.pca <- glPca(two.todi.genlight, nf=10) # retain first 10 axes (for later use in find.clusters); slow function
+#pull pca scores out of df
+two.pca.scores<-as.data.frame(two.todi.pca$scores)
+#ggplot color by species
+ggplot(two.pca.scores, aes(x=PC1, y=PC2, color=pop(two.todi.genlight))) +
+  geom_point(cex = 2)
+```
+
+Try subsetting only a microchromosome (20)
+```{r}
+twenty.todi.genlight<-reffed.todi.genlight[,reffed.todi.genlight$chromosome == "Pseudo20_dna"]
+#check loci retained
+twenty.todi.genlight$n.loc
+#make PCA
+twenty.todi.pca <- glPca(twenty.todi.genlight, nf=10) # retain first 10 axes (for later use in find.clusters); slow function
+#pull pca scores out of df
+twenty.pca.scores<-as.data.frame(twenty.todi.pca$scores)
+#ggplot color by species
+ggplot(twenty.pca.scores, aes(x=PC1, y=PC2, color=pop(twenty.todi.genlight))) +
+  geom_point(cex = 2)
+```
+
+Try 21
+```{r}
+twentyone.todi.genlight<-reffed.todi.genlight[,reffed.todi.genlight$chromosome == "Pseudo21_dna"]
+#loci retained
+twentyone.todi.genlight$n.loc
+#pca
+twentyone.todi.pca <- glPca(twentyone.todi.genlight, nf=300) # retain first 300 axes (for later use in find.clusters); slow function
+#pull pca scores out of df
+twentyone.pca.scores<-as.data.frame(twentyone.todi.pca$scores)
+#ggplot color by species
+ggplot(twentyone.pca.scores, aes(x=PC1, y=PC2, color=pop(twentyone.todi.genlight))) +
+  geom_point(cex = 2)
+```
+
+Try 27 which is less than 5 million base-pairs long and only has 12 snps in our dataset
+```{r}
+twentyseven.todi.genlight<-reffed.todi.genlight[,reffed.todi.genlight$chromosome == "Pseudo27_dna"]
+#loci
+twentyseven.todi.genlight$n.loc
+#pca
+twentyseven.todi.pca <- glPca(twentyseven.todi.genlight, nf=10) # retain first 300 axes (for later use in find.clusters); slow function
+#pull pca scores out of df
+twentyseven.pca.scores<-as.data.frame(twentyseven.todi.pca$scores)
+#ggplot color by species
+ggplot(twentyseven.pca.scores, aes(x=PC1, y=PC2, color=pop(twentyseven.todi.genlight))) +
+  geom_point(cex = 2)
+```
+
+It is fun to see how population structure changes depending on genome location and amount of data!
+
+As a reminder, here is our best estimate of the relationships:
+```{r}
+ggplot(nuclear.pca.scores, aes(x=PC1, y=PC2, color=pop(nuclear.todi.genlight))) +
+  geom_point(cex = 2)
+```
+
+Another fun thing we can do when we have a chromosomal alignment is to look at how divergence is distributed throughout the genome between closely related taxa. Here we check out albicilla/saurophagus
+
+```{r, echo=FALSE,out.width="49%", out.height="20%",fig.cap="Todiramphus saurophagus/albicilla",fig.show='hold',fig.align='center'}
+knitr::include_graphics(c("/Users/devder/Desktop/saurophagus.png","/Users/devder/Desktop/albicilla.png"))
+```
+
+Read in Fst output file from stacks
+```{r}
+sau.alb.ref.fst<-read.delim(file = "~/Desktop/populations.fst_sau-alb.tsv")
+head(sau.alb.ref.fst)
+levels(sau.alb.ref.fst$Chr)
+```
+
+subset only mapped chromosomes, calculate avg. Fst per chromosome, make table
+```{r message=FALSE, output=FALSE}
+chr.table<-as.data.frame(table(sau.alb.ref.fst$Chr))
+names(chr.table) <- c("chromosome", "snps")
+chr.table<-chr.table[c(8,18,19,27,28,30:35,9:17,20:26,36,37),]
+#chr.table$chromosome
+chr.table<- droplevels(chr.table)
+#chr.table$chromosome
+#subset
+Chr1<-subset(sau.alb.ref.fst,Chr == "Pseudo1_dna")
+Chr1A<-subset(sau.alb.ref.fst,Chr == "Pseudo1A_dna")
+Chr2<-subset(sau.alb.ref.fst,Chr == "Pseudo2_dna")
+Chr3<-subset(sau.alb.ref.fst,Chr == "Pseudo3_dna")
+Chr4<-subset(sau.alb.ref.fst,Chr == "Pseudo4_dna")
+Chr4A<-subset(sau.alb.ref.fst,Chr == "Pseudo4A_dna")
+Chr5<-subset(sau.alb.ref.fst,Chr == "Pseudo5_dna")
+Chr6<-subset(sau.alb.ref.fst,Chr == "Pseudo6_dna")
+Chr7<-subset(sau.alb.ref.fst,Chr == "Pseudo7_dna")
+Chr8<-subset(sau.alb.ref.fst,Chr == "Pseudo8_dna")
+Chr9<-subset(sau.alb.ref.fst,Chr == "Pseudo9_dna")
+Chr10<-subset(sau.alb.ref.fst,Chr == "Pseudo10_dna")
+Chr11<-subset(sau.alb.ref.fst,Chr == "Pseudo11_dna")
+Chr12<-subset(sau.alb.ref.fst,Chr == "Pseudo12_dna")
+Chr13<-subset(sau.alb.ref.fst,Chr == "Pseudo13_dna")
+Chr14<-subset(sau.alb.ref.fst,Chr == "Pseudo14_dna")
+Chr15<-subset(sau.alb.ref.fst,Chr == "Pseudo15_dna")
+Chr17<-subset(sau.alb.ref.fst,Chr == "Pseudo17_dna")
+Chr18<-subset(sau.alb.ref.fst,Chr == "Pseudo18_dna")
+Chr19<-subset(sau.alb.ref.fst,Chr == "Pseudo19_dna")
+Chr20<-subset(sau.alb.ref.fst,Chr == "Pseudo20_dna")
+Chr21<-subset(sau.alb.ref.fst,Chr == "Pseudo21_dna")
+Chr22<-subset(sau.alb.ref.fst,Chr == "Pseudo22_dna")
+Chr23<-subset(sau.alb.ref.fst,Chr == "Pseudo23_dna")
+Chr24<-subset(sau.alb.ref.fst,Chr == "Pseudo24_dna")
+Chr26<-subset(sau.alb.ref.fst,Chr == "Pseudo26_dna")
+Chr27<-subset(sau.alb.ref.fst,Chr == "Pseudo27_dna")
+ChrLGE22<-subset(sau.alb.ref.fst,Chr == "PseudoLGE22_dna")
+ChrZ<-subset(sau.alb.ref.fst,Chr == "PseudoZ_dna")
+#take means
+chr.table$fst<-c(mean(Chr1$AMOVA.Fst),mean(Chr1A$AMOVA.Fst),mean(Chr2$AMOVA.Fst),
+                 mean(Chr3$AMOVA.Fst),mean(Chr4$AMOVA.Fst),mean(Chr4A$AMOVA.Fst),mean(Chr5$AMOVA.Fst),mean(Chr6$AMOVA.Fst),
+                 mean(Chr7$AMOVA.Fst),mean(Chr8$AMOVA.Fst),mean(Chr9$AMOVA.Fst),mean(Chr10$AMOVA.Fst),mean(Chr11$AMOVA.Fst),mean(Chr12$AMOVA.Fst),
+                 mean(Chr13$AMOVA.Fst),mean(Chr14$AMOVA.Fst),mean(Chr15$AMOVA.Fst),mean(Chr17$AMOVA.Fst),
+                 mean(Chr18$AMOVA.Fst),mean(Chr19$AMOVA.Fst),mean(Chr20$AMOVA.Fst),mean(Chr21$AMOVA.Fst),mean(Chr22$AMOVA.Fst),
+                 mean(Chr23$AMOVA.Fst),mean(Chr24$AMOVA.Fst),mean(Chr26$AMOVA.Fst),mean(Chr27$AMOVA.Fst),mean(ChrLGE22$AMOVA.Fst),
+                 mean(ChrZ$AMOVA.Fst))
+#add chromosome length from zebra finch info on NCBI
+chr.table$length<- c(118548696, 73657157, 156412533, 112617285, 69780378, 20704505, 62374962,
+                     36305782, 39844632, 27993427, 27241186, 20806668, 21403021, 21576510, 16962381, 16419078,
+                     14428146, 11648728, 11201131, 11587733, 15652063, 5979137, 3370227, 6196912, 8021379, 4907541,
+                     4618897, 883365, 72861351)
+#take log of chrom length
+chr.table$log.length<-log(chr.table$length, base = 10)
+```
+
+Check out the table we built
+```{r}
+chr.table
+```
+
+Plot recovered snps vs. chromosome length
+```{r}
+plot(chr.table$length, chr.table$snps)
+abline(lm(chr.table$snps~chr.table$length), col="red")
+```
+
+Plot Fst vs chromosome length
+```{r}
+plot(chr.table$length, chr.table$fst)
+abline(lm(chr.table$fst~chr.table$length), col="red")
+#
+plot(chr.table$log.length, chr.table$fst)
+abline(lm(chr.table$fst~chr.table$log.length), col="red")
+```
+
+plot Fst across the genome (1.2 billion BP)
+```{r}
+ggplot(data = sau.alb.ref.fst) + 
+  geom_point(mapping = aes(x = X..Locus.ID, y = Odds.Ratio, color = Chr))+ 
+  theme(legend.position="none")
+```
+
+Plot just Chromosome 1 (120 million BP)
+```{r}
+ggplot(data = Chr1) + 
+  geom_point(mapping = aes(x = BP, y = Odds.Ratio, color = Chr))
+```
+
+Plot just Chromosome 26 (<5 million BP)
+```{r}
+ggplot(data = Chr26) + 
+  geom_point(mapping = aes(x = BP, y = AMOVA.Fst, color = Chr))
+```
